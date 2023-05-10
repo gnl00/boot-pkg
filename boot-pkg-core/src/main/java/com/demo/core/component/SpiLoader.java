@@ -27,7 +27,19 @@ public class SpiLoader {
         Assert.notNull(cl, "spi classloader must not be null");
 
         classloader = cl;
+        // 设置当前线程的上下文类加载器
         Thread.currentThread().setContextClassLoader(cl);
+        doServiceLoad();
+
+        // 加载完成后将上下文类加载器设置回原来的值，以避免影响其他模块的加载
+        Thread.currentThread().setContextClassLoader(getClass().getClassLoader());
+    }
+
+    public void loadClasspath() {
+        doServiceLoad();
+    }
+
+    public void doServiceLoad() {
         ServiceLoader<BootSpi> services = ServiceLoader.load(BootSpi.class);
         for (BootSpi service : services) {
             service.load();

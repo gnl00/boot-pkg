@@ -5,13 +5,16 @@ import com.demo.core.component.SpiLoader;
 import com.demo.spi.BootSpi;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.ConfigurableApplicationContext;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.io.File;
 import java.lang.reflect.InvocationTargetException;
 import java.net.MalformedURLException;
 import java.net.URL;
+import java.util.Map;
 
 /**
  * CoreController
@@ -28,17 +31,26 @@ public class CoreController {
     @Autowired
     private SpiLoader spiLoader;
 
+    @Autowired
+    private ConfigurableApplicationContext ac;
+
     @GetMapping("/str")
     public String str() {
         log.info("TestController --> str()");
         return "str()";
     }
 
+    @GetMapping("/classpath")
+    public void listClasspath() {
+        Map<String, Object> properties = ac.getEnvironment().getSystemProperties();
+        System.out.println(properties.get("java.class.path"));
+    }
+
     @GetMapping("/loadJar")
-    public void loadJar() throws MalformedURLException {
-        String jatPath = "boot-pkg-spi-impl-a.jar";
+    public void loadJar(@RequestParam String jarPath) throws MalformedURLException {
+        String path = "boot-pkg-spi-impl-a.jar";
         spiClassloader = new SPIClassloader(new URL[]{});
-        spiClassloader.loadExternalJar(jatPath);
+        spiClassloader.loadExternalJar(path);
         System.out.println("jar loaded");
     }
 
@@ -53,5 +65,10 @@ public class CoreController {
     @GetMapping("/load")
     public void loadSpi() {
         spiLoader.load(spiClassloader);
+    }
+
+    @GetMapping("/loadcp")
+    public void loadClasspath() {
+        spiLoader.loadClasspath();
     }
 }
