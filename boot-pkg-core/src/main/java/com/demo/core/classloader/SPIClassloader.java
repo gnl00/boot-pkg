@@ -16,6 +16,11 @@ public class SPIClassloader extends URLClassLoader {
         super(urls);
     }
 
+    public void loadExternalJar(File externalJar) throws MalformedURLException {
+        URL url = externalJar.toURI().toURL();
+        addURL(url);
+    }
+
     public void loadExternalJar(String jarPath) throws MalformedURLException {
         File externalJar = new File(jarPath);
         if (externalJar.exists()) {
