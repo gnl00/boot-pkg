@@ -137,7 +137,6 @@ public class CoreController {
 
     @GetMapping("/unload")
     public String unLoadPlugin(@RequestParam String pluginName) {
-        Plugins.unInstall(pluginName);
-        return "unloaded";
+        return Plugins.unInstall(pluginName)? "uninstall successfully" : "uninstall failed";
     }
 }

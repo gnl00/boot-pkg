@@ -51,12 +51,13 @@ boot-pkg
 }
 ```
 
-5、访问 `http://localhost:8080/loadFromRoot?jarName=boot-pkg-spi-impl-a-1.0-SNAPSHOT` 加载 jar 包。
+5、访问 `http://localhost:8080/loadFromRoot?jarName=` 加载 jar 包。
 
 *注意：这一步创建了一个新的 ClassLoader 来加载外部 jar 包，想要加载 Jar 包中的类必须使用加载了该 Jar 的 ClassLoader。*
 
-6、访问 `http://localhost:8080/dynamicLoad` 将自定义的 ClassLoader 加载到 VM 中，并执行 spi 接口的实现方法。
+6、访问 `http://localhost:8080/execute?pluginName=boot-pkg-spi-impl-a-1.0-SNAPSHOT` 将自定义的 ClassLoader 加载到 VM 中，并执行 SPI 接口的实现方法。
 可以从控制台看到两个输出：
+
 ```shell
 BootSpiImpl #1
 BootSpiImplAAA load #2
@@ -204,7 +205,19 @@ private static DynamicClassloader getProxyClassLoader(DynamicClassloader cl) {
 
 …
 
+> 目前采用此方法
 
+…
+
+**卸载流程**
+
+1、访问 `http://localhost:8080/plugins` 查看已安装的插件列表
+
+2、选择插件进行卸载 `http://localhost:8080/unload?pluginName=boot-pkg-spi-impl-a-1.0-SNAPSHOT`
+
+3、再次执行 `http://localhost:8080/execute?pluginName=boot-pkg-spi-impl-a-1.0-SNAPSHOT`，会发现显示插件执行失败。
+
+4、访问 `http://localhost:8080/plugins` 可以看到该插件已经被删除。
 
 …
 
