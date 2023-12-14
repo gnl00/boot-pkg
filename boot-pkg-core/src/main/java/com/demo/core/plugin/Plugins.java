@@ -6,6 +6,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.cglib.proxy.Enhancer;
 import org.springframework.cglib.proxy.NoOp;
 
+import java.lang.ref.WeakReference;
 import java.net.URL;
 import java.util.HashMap;
 import java.util.Map;
@@ -14,10 +15,13 @@ import java.util.Objects;
 @Slf4j
 public class Plugins {
     private static DynamicLoader dynamicLoader;
-    private static Map<String, PluginMetadata> installedPlugins;
+    private static final Map<String, PluginMetadata> installedPlugins;
+    // WeakReference JVM 只要发现不可达便立即回收
+    private static final Map<String, WeakReference<DynamicClassloader>> classloaderWRMap;
 
     static {
         installedPlugins = new HashMap<>();
+        classloaderWRMap = new HashMap<>();
     }
 
     private static void initLoader() {
@@ -26,24 +30,42 @@ public class Plugins {
         }
     }
 
-    public static void install(String name, URL url) {
-        DynamicClassloader dcl = loadURL(url);
+    public static void install(String pluginName, URL url) {
+        WeakReference<DynamicClassloader> srcl = loadURL(url);
         PluginMetadata metadata = PluginMetadata.builder()
-                .name(name)
+                .name(pluginName)
                 .url(url)
-                .classLoader(dcl)
+                .classLoader(srcl.get())
                 .build();
 
-        installedPlugins.put(name, metadata);
+        installedPlugins.put(pluginName, metadata);
+        classloaderWRMap.put(pluginName, srcl);
     }
 
-    private static DynamicClassloader loadURL(URL url) {
-        DynamicClassloader dynamicClassloader = new DynamicClassloader(new URL[]{});
-        dynamicClassloader.loadURL(url);
-        return dynamicClassloader;
+    private static WeakReference<DynamicClassloader> loadURL(URL url) {
+        WeakReference<DynamicClassloader> wkcl = new WeakReference<>(new DynamicClassloader(new URL[]{}));
+        wkcl.get().loadURL(url);
+        return wkcl;
     }
 
     public static boolean unInstall(String pluginName) {
+        PluginMetadata plugin = installedPlugins.get(pluginName);
+        if (Objects.nonNull(plugin)) {
+            // 卸载插件需要同时清除 classloader 引用
+            WeakReference<DynamicClassloader> weakReference = classloaderWRMap.get(pluginName);
+            weakReference.clear();
+            classloaderWRMap.remove(pluginName);
+            installedPlugins.remove(pluginName);
+            return true;
+        }
+        return false;
+    }
+
+    /**
+     * @link https://github.com/gnl00/boot-pkg/releases/tag/install-uninstall-1.0
+     */
+    @Deprecated
+    public static boolean unInstallByReflect(String pluginName) {
         PluginMetadata plugin = installedPlugins.get(pluginName);
         if (Objects.nonNull(plugin)) {
             DynamicClassloader dcl = plugin.getClassLoader();
@@ -70,7 +92,26 @@ public class Plugins {
         }
         dynamicLoader.loadClasspath();
     }
+
     public static boolean executeByName(String pluginName) {
+        if (Objects.isNull(dynamicLoader)) {
+            initLoader();
+        }
+        PluginMetadata plugin = installedPlugins.get(pluginName);
+        if (Objects.isNull(plugin)) {
+            log.error("plugin not found");
+            return false;
+        }
+        DynamicClassloader classLoader = plugin.getClassLoader();
+        dynamicLoader.load(classLoader);
+        return true;
+    }
+
+    /**
+     * @link https://github.com/gnl00/boot-pkg/releases/tag/install-uninstall-1.0
+     */
+    @Deprecated
+    public static boolean executeByProxy(String pluginName) {
         if (Objects.isNull(dynamicLoader)) {
             initLoader();
         }
@@ -87,6 +128,10 @@ public class Plugins {
         return true;
     }
 
+    /**
+     * @link https://github.com/gnl00/boot-pkg/releases/tag/install-uninstall-1.0
+     */
+    @Deprecated
     private static DynamicClassloader getProxyClassLoader(DynamicClassloader cl) {
         Enhancer enhancer = new Enhancer();
         enhancer.setSuperclass(cl.getClass());
