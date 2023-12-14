@@ -1,22 +1,20 @@
-package com.demo.core.component;
+package com.demo.core.loader;
 
 import com.demo.spi.BootSpi;
-import org.springframework.stereotype.Component;
 import org.springframework.util.Assert;
 
 import java.util.ServiceLoader;
 
 /**
- * SpiLoader
+ * DynamicLoader
  *
  * @author gnl
  * @since 2023/5/10
  */
-@Component
-public class SpiLoader {
+public class DynamicLoader {
 
     public void load(ClassLoader cl) { // 必须使用自定义的 ClassLoader
-        Assert.notNull(cl, "SPI ClassLoader must not be null");
+        Assert.notNull(cl, "ClassLoader must not be null");
 
         // 设置当前线程的上下文类加载器
         Thread.currentThread().setContextClassLoader(cl);

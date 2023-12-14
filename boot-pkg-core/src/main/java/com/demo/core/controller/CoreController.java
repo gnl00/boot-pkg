@@ -1,7 +1,8 @@
 package com.demo.core.controller;
 
-import com.demo.core.classloader.SPIClassloader;
-import com.demo.core.component.SpiLoader;
+import com.demo.core.plugin.PluginMetadata;
+import com.demo.core.plugin.PluginTools;
+import com.demo.core.plugin.Plugins;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.ConfigurableApplicationContext;
@@ -16,13 +17,10 @@ import java.io.FileOutputStream;
 import java.io.IOException;
 import java.net.MalformedURLException;
 import java.net.URL;
-import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.HashMap;
 import java.util.Map;
-import java.util.Objects;
-import java.util.stream.Stream;
 
 /**
  * CoreController
@@ -34,23 +32,8 @@ import java.util.stream.Stream;
 @RestController
 public class CoreController {
 
-    private static SPIClassloader spiClassloader;
-    private Map<String, String> jarsCache;
-
-    @Autowired
-    private SpiLoader spiLoader;
-
     @Autowired
     private ConfigurableApplicationContext ac;
-
-    {
-        jarsCache = getLocalJars();
-    }
-
-    @GetMapping("/str")
-    public String str() {
-        return "str()";
-    }
 
     @GetMapping("/classpath")
     public String listClasspath() {
@@ -62,22 +45,16 @@ public class CoreController {
     public Map<String, Object> getInfos() {
         Map<String, Object> systemProperties = ac.getEnvironment().getSystemProperties();
         Map<String, Object> retVal = new HashMap<>(systemProperties); // add system properties
-        retVal.putAll(getLocalJars());
         return retVal;
     }
 
-    @GetMapping("/localJars")
+    @GetMapping("/rootJars")
     public Map<String, String> getLocalJars() {
-        Map<String, String> jarMap = new HashMap<>();
-        // get jars file from project root path
-        try (Stream<Path> pathStream = Files.list(Paths.get("."))) {
-            pathStream.filter(p -> p.toString().endsWith(".jar")).forEach(p -> {
-                jarMap.put(p.getFileName().toString().substring(0, p.getFileName().toString().length() - 4), p.toString());
-            });
-        } catch (IOException e) {
-            log.error("get local jars error", e);
-        }
-        return jarMap;
+        return PluginTools.getRootJar();
+    }
+
+    private String getJarPath(String jarName) {
+        return PluginTools.getJarPath(jarName);
     }
 
     /**
@@ -87,53 +64,80 @@ public class CoreController {
      * <p>
      * 为了解决这个问题，可以使用 Spring 的 BeanUtils 来实现动态加载外部 Jar
      */
-    @GetMapping("/loadFromLocal")
-    public String loadExtJar(@RequestParam String jarName) throws IOException {
-        String jarPath = jarsCache.get(jarName);
-        Path filePath = Paths.get(jarPath);
-        File externalJar = new File(filePath.getFileName().toString());
-        if (Objects.isNull(spiClassloader)) {
-            spiClassloader = new SPIClassloader(new URL[]{});
+    @GetMapping("/loadFromRoot")
+    public String loadFromRoot(@RequestParam String jarName) {
+        String pathStr = getJarPath(jarName);
+        Path path = Paths.get(pathStr);
+        File jarFile = new File(path.getFileName().toString());
+        return loadJar(jarName, jarFile);
+    }
+
+    @GetMapping("/loadFromPath")
+    public String loadFromPath(@RequestParam String jarPath) {
+        Path path = Paths.get(jarPath);
+        File jarFile = new File(path.getFileName().toString());
+        String jarName = getJarName(jarPath); // TODO: check name here
+        return loadJar(jarName, jarFile);
+    }
+
+    private String getJarName(String jarPath) {
+        return jarPath.substring(jarPath.lastIndexOf("/") + 1, jarPath.lastIndexOf("."));
+    }
+
+    @PostMapping("/loadFromFile")
+    public String loadJarFromFile(MultipartFile multipartFile) {
+        try {
+            byte[] bytes = multipartFile.getBytes();
+            String jarName = multipartFile.getName(); // TODO: check name here
+            File jarFile = new File(jarName);
+            try (FileOutputStream fos = new FileOutputStream(jarFile)) {
+                fos.write(bytes);
+            }
+            return loadJar(jarName, jarFile);
+        } catch (IOException e) {
+            log.error("load jar from file failed {}", e.getMessage());
+            return "load jar failed";
         }
-        spiClassloader.loadExternalJar(externalJar);
-        System.out.println("jar loaded: " + jarName);
-        return "jar loaded: " + jarName;
+    }
+
+    private String loadJar(String jarName, File jar) {
+        try {
+            URL jarURL = jar.toURI().toURL();
+            int check = 0;
+            if (1== (check = Plugins.LoadCheck(jarName))) {
+                Plugins.install(jarName, jarURL);
+            } else if (-1 == check) {
+                return "jar already exists";
+            }
+            return "jar load successfully";
+        } catch (MalformedURLException e) {
+            log.error("load jar failed {}", e.getMessage());
+            return "load jar failed";
+        }
     }
 
     /**
      * 使用自定义的 ClassLoader 加载对应的 SPI 实现类并执行相应的方法。
      */
-    @GetMapping("/dynamicLoad")
-    public void dynamicLoad() {
-        spiLoader.load(spiClassloader);
+    @GetMapping("/execute")
+    public String dynamicLoad(@RequestParam String pluginName) {
+        return Plugins.executeByName(pluginName) ? "execute successfully" : "execute failed";
     }
 
     // load from classpath
     @GetMapping("/classpathLoad")
     public void loadFromClasspath() {
-        spiLoader.loadClasspath();
+        Plugins.classpathExecute();
     }
 
-    @PostMapping("/loadFromFile")
-    public void loadJarFromFile(MultipartFile multipartFile) throws IOException {
-        byte[] bytes = multipartFile.getBytes();
-        File externalJar = new File(multipartFile.getName());
-        try (FileOutputStream fos = new FileOutputStream(externalJar)) {
-            fos.write(bytes);
-        }
-        if (Objects.isNull(spiClassloader)) {
-            spiClassloader = new SPIClassloader(new URL[]{});
-        }
-        spiClassloader.loadExternalJar(externalJar);
-        System.out.println("jar loaded");
+    @GetMapping("/plugins")
+    public Map<String, PluginMetadata> getPlugins() {
+        return Plugins.getPlugins();
     }
 
-    @GetMapping("/loadFromPath")
-    public void loadJarFromPath(@RequestParam String path) throws MalformedURLException {
-        if (Objects.isNull(spiClassloader)) {
-            spiClassloader = new SPIClassloader(new URL[]{});
-        }
-        spiClassloader.loadExternalJar(path);
-        System.out.println("jar loaded");
+    @GetMapping("/unload")
+    public String unLoadPlugin(@RequestParam String pluginName) {
+        Plugins.unInstall(pluginName);
+        return "unloaded";
     }
 }
